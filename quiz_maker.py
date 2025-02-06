@@ -87,36 +87,46 @@ def rewrite_query_for_unsplash(question):
     """
     Rewrite the given question into a concise query suitable for Unsplash searches.
     """
-    # Prompt AI to rewrite the question as a concise query
     prompt = f"""
-    Rewrite the following question into a concise but descriptive photo search query.
-    Ensure the result includes multiple related keywords that help find a relevant image.
+    Convert this personality quiz question into 2-3 specific keywords for finding a relevant photo.
+    Focus on visual elements and emotions that represent the question's theme.
+    Keep it under 30 characters total.
     
     Examples:
-    - "What is your ideal weekend activity?" → "weekend activities, hiking, friends outdoors"
-    - "How do you spend a rainy day?" → "rainy day, reading book, cozy home"
-    - "What is your favorite type of vacation?" → "beach vacation, tropical, sunset, travel"
+    - "What is your ideal weekend activity?" → "leisure lifestyle relax"
+    - "How do you handle stress?" → "meditation peaceful"
+    - "What's your dream job?" → "office workspace career"
+    - "How do you prefer to socialize?" → "friends gathering cafe"
     
-    Now, process this question: '{question}'
+    Question: '{question}'
+    Return only the keywords, no explanation.
     """
-    rewritten_prompt = model.invoke(input=prompt).strip()
     
-    # Ensure the rewritten query is concise (under 50 characters)
-    if len(rewritten_prompt) > 50:
-        rewritten_prompt = rewritten_prompt[:47] + "..."  # Truncate and add ellipsis
-
-    return rewritten_prompt
+    rewritten_query = model.invoke(input=prompt).strip()
+    
+    # Clean up the response
+    rewritten_query = rewritten_query.lower()  # Convert to lowercase
+    rewritten_query = re.sub(r'[^\w\s]', '', rewritten_query)  # Remove punctuation
+    rewritten_query = rewritten_query[:30]  # Ensure length limit
+    
+    print(f"Image search query: {rewritten_query}")  # Debug print
+    return rewritten_query
 
 def fetch_image(query):
     """
     Fetch an image from Unsplash based on the given query.
     """
-    # Fallback image placeholder (in case Unsplash returns irrelevant results)
-    fallback_image_path = "fallback_image.jpg"  # Ensure this file is in your working directory
+    fallback_image_path = "fallback_image.jpg"
     
-    # Perform Unsplash API request
     try:
-        url = f'https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_ACCESS_KEY}'
+        # Add relevant photo parameters
+        url = (f'https://api.unsplash.com/photos/random'
+               f'?query={query}'
+               f'&client_id={UNSPLASH_ACCESS_KEY}'
+               f'&orientation=landscape'
+               f'&content_filter=high'
+               f'&per_page=1')
+        
         response = requests.get(url)
 
         if response.status_code == 200:
@@ -125,10 +135,10 @@ def fetch_image(query):
                 img_data = requests.get(img_url).content
                 return Image.open(io.BytesIO(img_data))
         
-        print("Unsplash returned no relevant image. Using fallback.")
-        return Image.open(fallback_image_path)  # Return fallback image if query fails
+        print(f"Unsplash query failed: {query}")
+        return Image.open(fallback_image_path)
     except Exception as e:
-        print(f"Error fetching image: {e}. Using fallback image.")
+        print(f"Error fetching image: {e}")
         return Image.open(fallback_image_path)
 
 def generate_ai_image(prompt, num_attempts=3):
@@ -143,15 +153,17 @@ def generate_ai_image(prompt, num_attempts=3):
                 raise Exception("Failed to fetch image from Unsplash.")
 
             # Resize the image to match the expected input size
-            real_image = real_image.resize((256, 256), Image.LANCZOS)
+            real_image = real_image.resize((512, 512), Image.LANCZOS)
 
             # Use Stable Diffusion to modify the image
             result_image = img2img_pipe(
                 prompt=f"An artistic representation of {prompt}",
                 image=real_image,
-                strength=0.5,
-                num_inference_steps=50,
-                guidance_scale=9.0
+                strength=0.7,
+                num_inference_steps=75,
+                guidance_scale=12.0,
+                width=512,  # Larger size
+                height=512,
             ).images[0]
 
             return result_image
